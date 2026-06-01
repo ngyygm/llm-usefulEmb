@@ -1,35 +1,77 @@
-"""Fix 6 sparse figures (>80% white) by using denser layouts with more data."""
+"""Fix sparse figures by using denser layouts with more data."""
 
 import os, json
+from pathlib import Path
 import numpy as np
+
+os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/prune-to-prosper-mpl-cache")
+
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-OUTPUT_DIR = "/home/linkco/exa/llm-usefulEeb/paper/figures"
-DATA_DIR = "/home/linkco/exa/llm-usefulEeb/data/experiment_results"
-ANALYZE_DIR = "/home/linkco/exa/llm-usefulEeb/data/analyze"
+ROOT = Path(__file__).resolve().parents[1]
+PAPER_DIR = ROOT / "Beyond_Redundancy__Diagnosing_Information_Distribution_in_Text_Embeddings_via_Task_Aware_Dimension_Selection"
+OUTPUT_DIR = str(PAPER_DIR / "figures")
+DATA_DIR = str(ROOT / "data" / "experiment_results")
+ANALYZE_DIR = str(ROOT / "data" / "analyze")
 
 MODEL_DISPLAY = {
     "gte-large-en-v1.5": "GTE-Large",
-    "stella_en_400M_v5": "Stella-400M",
-    "roberta-large-InBedder": "RoBERTa-IB",
+    "stella_en_400M_v5": "Stella EN 400M",
+    "roberta-large-InBedder": "RoBERTa-InBedder",
     "bge-m3": "BGE-M3",
-    "instructor-large": "Instructor",
-    "mxbai-embed-large-v1": "MxBai",
+    "instructor-large": "Instructor-Large",
+    "mxbai-embed-large-v1": "MxBai-Embed-Large",
     "gte-base": "GTE-Base",
-    "gtr-t5-large": "GTR-T5",
+    "gtr-t5-large": "GTR-T5-Large",
     "bart-base": "BART-Base",
     "roberta-large": "RoBERTa-Large",
-    "Qwen3-Embedding-0.6B": "Qwen3-Emb",
-    "inbedder-roberta-large": "RoBERTa-IB",
+    "Qwen3-Embedding-0.6B": "Qwen3-Embedding-0.6B",
+    "inbedder-roberta-large": "RoBERTa-InBedder",
+}
+
+MODEL_SHORT = {
+    "gte-large-en-v1.5": "GTE-Large",
+    "stella_en_400M_v5": "Stella EN 400M",
+    "roberta-large-InBedder": "RoBERTa-IB.",
+    "bge-m3": "BGE-M3",
+    "instructor-large": "Instructor-Large",
+    "mxbai-embed-large-v1": "MxBai-Emb.-Large",
+    "gte-base": "GTE-Base",
+    "gtr-t5-large": "GTR-T5-Large",
+    "bart-base": "BART-Base",
+    "roberta-large": "RoBERTa-Large",
+    "Qwen3-Embedding-0.6B": "Qwen3-Emb.-0.6B",
+    "inbedder-roberta-large": "RoBERTa-IB.",
 }
 
 C_CONTRASTIVE = '#4A90D9'
 C_NON_CONTRASTIVE = '#E74C3C'
 
-NON_CONTRASTIVE = {"BART-Base", "RoBERTa-Large", "RoBERTa-IB"}
+NON_CONTRASTIVE_KEYS = {"bart-base", "roberta-large", "roberta-large-InBedder", "inbedder-roberta-large"}
+NON_CONTRASTIVE = {"BART-Base", "RoBERTa-Large", "RoBERTa-InBedder", "RoBERTa-IB."}
+
+
+def model_label(model_key, short=False):
+    labels = MODEL_SHORT if short else MODEL_DISPLAY
+    return labels.get(model_key, model_key)
+
+
+def is_non_contrastive(model_key):
+    return model_key in NON_CONTRASTIVE_KEYS
+
+
+def save_current_figure(filename):
+    path = Path(OUTPUT_DIR) / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path)
+    if path.suffix.lower() != ".pdf":
+        plt.savefig(path.with_suffix(".pdf"))
+    plt.close()
+    print(f"Saved: {path}")
 
 def set_style():
     plt.rcParams.update({
@@ -82,7 +124,7 @@ def fix_random_variance():
                 vals.append(np.mean(metric_vals) if metric_vals else 0)
 
             offset = (m_idx - len(models[:6]) / 2 + 0.5) * width
-            label = MODEL_DISPLAY.get(m, m)[:10]
+            label = model_label(m, short=True)
             ax.bar(x + offset, vals, width, color=cmap(m_idx / 6), alpha=0.8,
                    label=label, edgecolor='white', linewidth=0.3)
 
@@ -105,11 +147,11 @@ def fix_random_variance():
                 if bdata:
                     cvs.append(bdata.get("cv", 0) * 100)
                     p5s.append(bdata.get("p5", 0))
-            display = MODEL_DISPLAY.get(m, m)
-            color = C_NON_CONTRASTIVE if display in NON_CONTRASTIVE else C_CONTRASTIVE
+            display = model_label(m, short=True)
+            color = C_NON_CONTRASTIVE if is_non_contrastive(m) else C_CONTRASTIVE
             ax.scatter(cvs, p5s, c=color, s=30, alpha=0.6, edgecolors='white', linewidth=0.3)
             if cvs:
-                ax.annotate(display[:6], (np.mean(cvs), np.mean(p5s)),
+                ax.annotate(display, (np.mean(cvs), np.mean(p5s)),
                             fontsize=6, ha='center', va='bottom')
 
         ax.set_xlabel("CV (%)")
@@ -126,10 +168,7 @@ def fix_random_variance():
                bbox_to_anchor=(0.5, -0.02), framealpha=0.9)
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig_random_variance.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig_random_variance.png")
 
 
 # ============================================================
@@ -234,10 +273,7 @@ def fix_training_paradigm():
         ax.set_title("(d) Per-Task-Type Details", fontweight='bold', pad=20)
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig_training_paradigm.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig_training_paradigm.png")
 
 
 # ============================================================
@@ -353,10 +389,7 @@ def fix_entropy():
     ax.legend(handles=legend_elements, fontsize=7)
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig_entropy_all_models.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig_entropy_all_models.png")
 
 
 # ============================================================
@@ -370,12 +403,12 @@ def fix_opt_random_gap():
         ("GTE-Large",   +2.41, 1.49, 3.39, 0.83, 0.001, True),
         ("Instructor",  +2.89, 1.78, 4.09, 0.83, 0.001, True),
         ("GTE-Base",    +3.45, 2.11, 4.93, 0.81, 0.001, True),
-        ("Stella-400M", +3.22, 2.17, 4.44, 0.93, 0.001, True),
+        ("Stella EN 400M", +3.22, 2.17, 4.44, 0.93, 0.001, True),
         ("BGE-M3",      +4.62, 3.21, 6.13, 1.04, 0.001, True),
         ("GTR-T5",      +4.75, 2.98, 6.67, 0.86, 0.001, True),
-        ("Qwen3-Emb",   +5.01, 3.36, 6.84, 0.97, 0.001, True),
+        ("Qwen3-Emb.-0.6B", +5.01, 3.36, 6.84, 0.97, 0.001, True),
         ("RoBERTa-Large", +8.56, -5.85, 18.88, 0.23, 0.191, False),
-        ("RoBERTa-IB",  +8.19, 5.99, 10.56, 1.17, 0.001, False),
+        ("RoBERTa-IB.", +8.19, 5.99, 10.56, 1.17, 0.001, False),
         ("BART-Base",   +10.08, 6.28, 13.73, 0.90, 0.001, False),
     ]
 
@@ -437,10 +470,7 @@ def fix_opt_random_gap():
                bbox_to_anchor=(0.5, -0.02), framealpha=0.9)
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig_opt_random_gap_all_models.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig_opt_random_gap_all_models.png")
 
 
 # ============================================================
@@ -487,8 +517,8 @@ def fix_redundancy_mechanism():
         else:
             entropies.append(0)
 
-    display_names = [MODEL_DISPLAY.get(m, m)[:12] for m in models_sorted]
-    colors = [C_NON_CONTRASTIVE if MODEL_DISPLAY.get(m, '') in NON_CONTRASTIVE
+    display_names = [model_label(m, short=True) for m in models_sorted]
+    colors = [C_NON_CONTRASTIVE if is_non_contrastive(m)
               else C_CONTRASTIVE for m in models_sorted]
 
     ax.barh(y, entropies, color=colors, alpha=0.8, height=0.6, edgecolor='white', linewidth=0.5)
@@ -523,7 +553,7 @@ def fix_redundancy_mechanism():
                 cum = np.cumsum(sorted_scores) / total
                 interp_vals = np.interp(x_pts, np.linspace(0, 1, len(cum)), cum)
                 ax.plot(x_pts, interp_vals, color=cmap(mi / 6), alpha=0.8,
-                        label=MODEL_DISPLAY.get(m, m)[:10])
+                        label=model_label(m, short=True))
 
     ax.plot([0, 1], [0, 1], 'k--', alpha=0.3, label='Uniform')
     ax.set_xlabel("Fraction of Chunks")
@@ -534,7 +564,7 @@ def fix_redundancy_mechanism():
     # (c) Best-Poor gap distribution across tasks for each model
     ax = axes[2]
     top6 = models_sorted[:6]
-    display6 = [MODEL_DISPLAY.get(m, m)[:10] for m in top6]
+    display6 = [model_label(m, short=True) for m in top6]
     all_gaps_by_model = []
 
     for mi, m in enumerate(top6):
@@ -561,10 +591,7 @@ def fix_redundancy_mechanism():
     ax.set_title("(c) Best-Poor Gap\nper Model", fontweight='bold')
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig7_redundancy_mechanism.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig7_redundancy_mechanism.png")
 
 
 # ============================================================
@@ -589,14 +616,14 @@ def fix_magnitude_comparison():
     y = np.arange(len(models_sorted))
     means = [mag_corr[m]["summary"]["mean_rho"] for m in models_sorted]
     stds = [mag_corr[m]["summary"]["std_rho"] for m in models_sorted]
-    colors = [C_NON_CONTRASTIVE if MODEL_DISPLAY.get(m, '') in NON_CONTRASTIVE
+    colors = [C_NON_CONTRASTIVE if is_non_contrastive(m)
               else C_CONTRASTIVE for m in models_sorted]
 
     ax.barh(y, means, xerr=stds, color=colors, alpha=0.8, capsize=3,
             height=0.6, edgecolor='white', linewidth=0.5)
     ax.axvline(x=0, color='#333', linewidth=1)
     ax.set_yticks(y)
-    ax.set_yticklabels([MODEL_DISPLAY.get(m, m)[:12] for m in models_sorted], fontsize=8)
+    ax.set_yticklabels([model_label(m, short=False) for m in models_sorted], fontsize=8)
     ax.set_xlabel("Spearman ρ")
     ax.set_title("(a) Magnitude vs Task\nImportance Correlation", fontweight='bold')
     ax.set_xlim(-0.2, 0.2)
@@ -610,18 +637,18 @@ def fix_magnitude_comparison():
     # (b) Per-model: number of tasks where magnitude wins vs loses
     ax = axes[1]
     for mi, m in enumerate(models_sorted):
-        tasks = mag_corr[m].get("tasks", {})
-        wins = sum(1 for t in tasks.values() if t.get("rho", 0) > 0.05)
-        losses = sum(1 for t in tasks.values() if t.get("rho", 0) < -0.05)
+        tasks = mag_corr[m].get("task_correlations", mag_corr[m].get("tasks", {}))
+        wins = sum(1 for t in tasks.values() if t.get("spearman_rho", t.get("rho", 0)) > 0.05)
+        losses = sum(1 for t in tasks.values() if t.get("spearman_rho", t.get("rho", 0)) < -0.05)
         ties = len(tasks) - wins - losses
-        display = MODEL_DISPLAY.get(m, m)[:12]
-        color = C_NON_CONTRASTIVE if display in NON_CONTRASTIVE else C_CONTRASTIVE
+        display = model_label(m, short=True)
+        color = C_NON_CONTRASTIVE if is_non_contrastive(m) else C_CONTRASTIVE
 
         ax.barh(mi - 0.15, wins, 0.3, color='#27AE60', alpha=0.7, edgecolor='white')
         ax.barh(mi + 0.15, losses, 0.3, color='#E74C3C', alpha=0.7, edgecolor='white')
 
     ax.set_yticks(range(len(models_sorted)))
-    ax.set_yticklabels([MODEL_DISPLAY.get(m, m)[:12] for m in models_sorted], fontsize=8)
+    ax.set_yticklabels([model_label(m, short=False) for m in models_sorted], fontsize=8)
     ax.set_xlabel("Number of Tasks")
     ax.set_title("(b) Tasks Where Magnitude\nWins (green) vs Loses (red)", fontweight='bold')
     ax.legend([mpatches.Patch(color='#27AE60', alpha=0.7),
@@ -633,15 +660,15 @@ def fix_magnitude_comparison():
     all_rhos = []
     model_labels = []
     for m in models_sorted:
-        tasks = mag_corr[m].get("tasks", {})
-        rhos = [t.get("rho", 0) for t in tasks.values()]
+        tasks = mag_corr[m].get("task_correlations", mag_corr[m].get("tasks", {}))
+        rhos = [t.get("spearman_rho", t.get("rho", 0)) for t in tasks.values()]
         all_rhos.append(rhos)
-        model_labels.append(MODEL_DISPLAY.get(m, m)[:10])
+        model_labels.append(model_label(m, short=True))
 
     bp = ax.boxplot(all_rhos, patch_artist=True, vert=False, widths=0.6)
     cmap = plt.cm.Set2
     for i, patch in enumerate(bp['boxes']):
-        color = C_NON_CONTRASTIVE if MODEL_DISPLAY.get(models_sorted[i], '') in NON_CONTRASTIVE else C_CONTRASTIVE
+        color = C_NON_CONTRASTIVE if is_non_contrastive(models_sorted[i]) else C_CONTRASTIVE
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
@@ -658,10 +685,7 @@ def fix_magnitude_comparison():
                bbox_to_anchor=(0.5, -0.02), framealpha=0.9)
 
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig9_magnitude_comparison.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    save_current_figure("fig9_magnitude_comparison.png")
 
 
 if __name__ == "__main__":

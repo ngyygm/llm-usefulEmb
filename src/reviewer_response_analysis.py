@@ -12,8 +12,31 @@ Addresses:
 import os
 import json
 import numpy as np
+from pathlib import Path
 from collections import defaultdict
 from itertools import combinations
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EXCLUDED_ANALYZE_TASKS = {"STS17", "STS22"}
+EXCLUDED_TRANSFER_TASKS = {"STS17"}
+
+
+def top_fraction_concentration(sorted_scores, fraction):
+    """Return the share of total score captured by the top fraction of chunks.
+
+    We use ceil(n * fraction) chunks so that "top 10%" means at least 10% of the
+    available chunks, while exact cases such as 25% or 50% on divisible chunk
+    counts still use the mathematically correct number of chunks.
+    """
+    sorted_scores = np.asarray(sorted_scores, dtype=float)
+    if len(sorted_scores) == 0:
+        return 0.0
+    total = float(sorted_scores.sum())
+    if total <= 0:
+        return 0.0
+    k = max(1, int(np.ceil(len(sorted_scores) * fraction)))
+    return float(sorted_scores[:k].sum() / total)
 
 
 def load_analyze_data(analyze_dir):
@@ -59,6 +82,8 @@ def analyze_redundancy_mechanism(analyze_data):
         results[model_name] = {"model_dim": model_dim, "tasks": {}}
 
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             if "2" not in task_data.get("split_win_size", {}):
                 continue
 
@@ -83,11 +108,9 @@ def analyze_redundancy_mechanism(analyze_data):
 
             # 3. Concentration: what fraction of total score is in top-K chunks?
             sorted_scores = np.sort(chunk_scores)[::-1]
-            cumsum = np.cumsum(sorted_scores)
-            total = cumsum[-1]
-            top_10_pct = cumsum[max(1, n_chunks // 10)] / total if total > 0 else 0
-            top_25_pct = cumsum[max(1, n_chunks // 4)] / total if total > 0 else 0
-            top_50_pct = cumsum[max(1, n_chunks // 2)] / total if total > 0 else 0
+            top_10_pct = top_fraction_concentration(sorted_scores, 0.10)
+            top_25_pct = top_fraction_concentration(sorted_scores, 0.25)
+            top_50_pct = top_fraction_concentration(sorted_scores, 0.50)
 
             # 4. Best vs Poor gap at different chunk counts (from split_win_size)
             gap_analysis = {}
@@ -142,6 +165,8 @@ def analyze_pruning_ratio_sweep(analyze_data):
         results[model_name] = {"model_dim": model_dim, "ratios": {}}
 
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             default_score = task_data["defult_score"]
             if default_score <= 0:
                 continue
@@ -197,6 +222,8 @@ def analyze_donor_ranking_uniformity(analyze_data, task_similar_data):
         task_entropy = {}
         task_cv = {}
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             if "2" not in task_data.get("split_win_size", {}):
                 continue
             chunk_scores = np.array(task_data["split_win_size"]["2"]["chunk_result"])
@@ -214,6 +241,8 @@ def analyze_donor_ranking_uniformity(analyze_data, task_similar_data):
         ts_data = task_similar_data[model_name]
         self_scores = {}
         for donor, targets in ts_data.items():
+            if donor in EXCLUDED_TRANSFER_TASKS:
+                continue
             if donor in targets and isinstance(targets[donor], (int, float)):
                 self_scores[donor] = targets[donor]
 
@@ -261,6 +290,8 @@ def analyze_interchangeability_evidence(analyze_data, task_similar_data):
         # Evidence 1: Optimized-random gap
         gaps = []
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             random_scores = task_data.get("random_score", {})
             sort_scores = task_data.get("sort_score", {})
             for dim_str in random_scores:
@@ -271,6 +302,8 @@ def analyze_interchangeability_evidence(analyze_data, task_similar_data):
         # Evidence 2: Best-Poor gap narrows with more dimensions
         best_poor_gaps = {}
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             for ws_str, ws_data in task_data.get("split_win_size", {}).items():
                 for td_str, td_data in ws_data.get("chunk_win_size", {}).items():
                     head = td_data.get("head_score", {}).get("main_score", 0)
@@ -288,7 +321,11 @@ def analyze_interchangeability_evidence(analyze_data, task_similar_data):
             ts_data = task_similar_data[model_name]
             retentions = []
             for donor, targets in ts_data.items():
+                if donor in EXCLUDED_TRANSFER_TASKS:
+                    continue
                 for target, score in targets.items():
+                    if target in EXCLUDED_TRANSFER_TASKS:
+                        continue
                     if target in ts_data.get(target, {}) and isinstance(score, (int, float)):
                         self_score = ts_data[target].get(target, 0)
                         if isinstance(self_score, (int, float)) and self_score > 0:
@@ -303,6 +340,8 @@ def analyze_interchangeability_evidence(analyze_data, task_similar_data):
         # Evidence 4: Chunk score flatness
         chunk_entropies = []
         for task_name, task_data in model_data["task_name"].items():
+            if task_name in EXCLUDED_ANALYZE_TASKS:
+                continue
             if "2" in task_data.get("split_win_size", {}):
                 chunk_scores = np.array(task_data["split_win_size"]["2"]["chunk_result"])
                 probs = np.abs(chunk_scores)
@@ -336,13 +375,13 @@ def analyze_interchangeability_evidence(analyze_data, task_similar_data):
 
 
 def main():
-    analyze_dir = "/home/linkco/exa/llm-usefulEeb/data/analyze"
-    task_similar_dir = "/home/linkco/exa/llm-usefulEeb/data/task_similar"
-    output_dir = "/home/linkco/exa/llm-usefulEeb/data/experiment_results"
+    analyze_dir = REPO_ROOT / "data" / "analyze"
+    task_similar_dir = REPO_ROOT / "data" / "task_similar"
+    output_dir = REPO_ROOT / "data" / "experiment_results"
 
     print("Loading data...")
-    analyze_data = load_analyze_data(analyze_dir)
-    task_similar_data = load_task_similar_data(task_similar_dir)
+    analyze_data = load_analyze_data(str(analyze_dir))
+    task_similar_data = load_task_similar_data(str(task_similar_dir))
     print(f"  Analyze data: {len(analyze_data)} models")
     print(f"  Task similar data: {len(task_similar_data)} models")
 
@@ -406,8 +445,8 @@ def main():
             print(f"    Chunk entropy: {entropy['mean']:.3f} ({entropy['interpretation']})")
 
     # Save
-    output_path = os.path.join(output_dir, "reviewer_response_analysis.json")
-    with open(output_path, "w") as f:
+    output_path = output_dir / "reviewer_response_analysis.json"
+    with output_path.open("w") as f:
         json.dump(all_results, f, indent=2, default=str)
     print(f"\nResults saved to {output_path}")
 

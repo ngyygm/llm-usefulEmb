@@ -2,28 +2,32 @@
 
 import os
 import json
+from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
-OUTPUT_DIR = "/home/linkco/exa/llm-usefulEeb/paper/figures"
-DATA_DIR = "/home/linkco/exa/llm-usefulEeb/data/experiment_results"
+ROOT = Path(__file__).resolve().parents[1]
+PAPER_DIR = ROOT / "Beyond_Redundancy__Diagnosing_Information_Distribution_in_Text_Embeddings_via_Task_Aware_Dimension_Selection"
+OUTPUT_DIR = str(PAPER_DIR / "figures")
+DATA_DIR = str(ROOT / "data" / "experiment_results")
+ANALYZE_DIR = str(ROOT / "data" / "analyze")
 
 MODEL_DISPLAY = {
     "gte-large-en-v1.5": "GTE-Large",
-    "stella_en_400M_v5": "Stella-400M",
-    "roberta-large-InBedder": "RoBERTa-IB",
+    "stella_en_400M_v5": "Stella EN 400M",
+    "roberta-large-InBedder": "RoBERTa-InBedder",
     "bge-m3": "BGE-M3",
-    "instructor-large": "Instructor",
-    "mxbai-embed-large-v1": "MxBai",
+    "instructor-large": "Instructor-Large",
+    "mxbai-embed-large-v1": "MxBai-Embed-Large",
     "gte-base": "GTE-Base",
     "gtr-t5-large": "GTR-T5",
     "bart-base": "BART-Base",
     "roberta-large": "RoBERTa-Large",
-    "Qwen3-Embedding-0.6B": "Qwen3-Emb",
-    "inbedder-roberta-large": "RoBERTa-IB",
+    "Qwen3-Embedding-0.6B": "Qwen3-Emb. 0.6B",
+    "inbedder-roberta-large": "RoBERTa-InBedder",
 }
 
 C_CONTRASTIVE = '#4A90D9'
@@ -49,6 +53,36 @@ def set_style():
 def load_json(path):
     with open(path) as f:
         return json.load(f)
+
+
+def load_full_dim_scores():
+    scores = {}
+    if not os.path.isdir(ANALYZE_DIR):
+        return scores
+    for fname in os.listdir(ANALYZE_DIR):
+        if not fname.endswith(".json"):
+            continue
+        model_name = fname[:-5]
+        try:
+            data = load_json(os.path.join(ANALYZE_DIR, fname))
+        except OSError:
+            continue
+        scores[model_name] = {}
+        for task_name, task_data in data.get("task_name", {}).items():
+            default_score = task_data.get("defult_score")
+            if default_score is not None and default_score > 0:
+                scores[model_name][task_name] = float(default_score)
+    return scores
+
+
+def save_current_figure(filename):
+    path = Path(OUTPUT_DIR) / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path)
+    if path.suffix.lower() != ".pdf":
+        plt.savefig(path.with_suffix(".pdf"))
+    plt.close()
+    print(f"Saved: {path}")
 
 
 # ============================================================
@@ -313,55 +347,144 @@ def fig_retrieval_cost():
 # 5. Random variance violin/box plot
 # ============================================================
 def fig_random_variance():
-    set_style()
+    plt.rcParams.update({
+        'font.family': 'serif',
+        'font.serif': ['Times New Roman', 'Times', 'DejaVu Serif'],
+        'mathtext.fontset': 'stix',
+        'font.weight': 'bold',
+        'font.size': 18,
+        'figure.dpi': 300,
+        'savefig.dpi': 300,
+        'savefig.bbox': 'tight',
+        'axes.grid': True,
+        'grid.alpha': 0.25,
+        'grid.color': '#D0D0D0',
+        'grid.linewidth': 0.5,
+        'axes.spines.top': False,
+        'axes.spines.right': False,
+    })
     d = load_json(os.path.join(DATA_DIR, "random_variance_tail_risk.json"))
+    full_dim_scores = load_full_dim_scores()
 
-    budgets = d["config"]["budgets"]
-    models = list(d["per_model"].keys())
+    budgets = [64, 128, 256]
+    models = [
+        "gte-large-en-v1.5",
+        "stella_en_400M_v5",
+        "bge-m3",
+        "mxbai-embed-large-v1",
+        "instructor-large",
+        "Qwen3-Embedding-0.6B",
+        "roberta-large",
+        "bart-base",
+    ]
+    models = [m for m in models if m in d["per_model"]]
+    families = {
+        "gte-large-en-v1.5": "retrieval",
+        "bge-m3": "retrieval",
+        "mxbai-embed-large-v1": "retrieval",
+        "stella_en_400M_v5": "instruction",
+        "instructor-large": "instruction",
+        "Qwen3-Embedding-0.6B": "instruction",
+        "roberta-large": "backbone",
+        "bart-base": "backbone",
+    }
+    family_style = {
+        "retrieval": ("#3B6FA0", "#C8D7E6"),
+        "instruction": ("#2E8B57", "#C6DED3"),
+        "backbone": ("#B85B45", "#EAD4C8"),
+    }
 
-    fig, axes = plt.subplots(1, len(budgets), figsize=(3.5 * len(budgets), 5), sharey=True)
-    if len(budgets) == 1:
-        axes = [axes]
-
-    cmap = plt.cm.Set2
-    colors = [cmap(i / len(models)) for i in range(len(models))]
+    fig, axes = plt.subplots(1, len(budgets), figsize=(22, 10), sharey=True)
+    fig.subplots_adjust(left=0.05, right=0.97, top=0.86, bottom=0.26, wspace=0.10)
 
     for ax_idx, budget in enumerate(budgets):
         ax = axes[ax_idx]
-        cv_vals = []
+        mean_vals = []
+        p5_vals = []
+        cvar_vals = []
         labels = []
-        box_colors = []
+        face_colors = []
+        edge_colors = []
 
-        for m_idx, m in enumerate(models):
+        for m in models:
             pm = d["per_model"][m]
             tasks = pm.get("tasks", {})
-            cvs = []
+            baseline_by_task = full_dim_scores.get(m, {})
+            means = []
+            p5s = []
+            cvars = []
             for tname, tdata in tasks.items():
                 bdata = tdata.get("budgets", {}).get(str(budget))
-                if bdata and "cv" in bdata:
-                    cvs.append(bdata["cv"])
-            if cvs:
-                cv_vals.append(cvs)
-                labels.append(MODEL_DISPLAY.get(m, m)[:10])
-                box_colors.append(colors[m_idx])
+                baseline = baseline_by_task.get(tname)
+                if not bdata or not baseline:
+                    continue
+                if bdata.get("mean") is not None:
+                    means.append(bdata["mean"] / baseline * 100.0)
+                if bdata.get("p5") is not None:
+                    p5s.append(bdata["p5"] / baseline * 100.0)
+                if bdata.get("cvar_5") is not None:
+                    cvars.append(bdata["cvar_5"] / baseline * 100.0)
+            means = [v for v in means if v is not None]
+            p5s = [v for v in p5s if v is not None]
+            cvars = [v for v in cvars if v is not None]
+            if means:
+                mean_vals.append(means)
+                p5_vals.append(float(np.mean(p5s)) if p5s else np.nan)
+                cvar_vals.append(float(np.mean(cvars)) if cvars else np.nan)
+                labels.append(MODEL_DISPLAY.get(m, m))
+                edge, face = family_style[families[m]]
+                edge_colors.append(edge)
+                face_colors.append(face)
 
-        if cv_vals:
-            bp = ax.boxplot(cv_vals, patch_artist=True, widths=0.6)
-            for patch, color in zip(bp['boxes'], box_colors):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.7)
+        positions = np.arange(len(mean_vals))
+        if mean_vals:
+            bp = ax.boxplot(mean_vals, positions=positions, patch_artist=True,
+                            widths=0.58, showfliers=False)
+            for patch, edge, face in zip(bp["boxes"], edge_colors, face_colors):
+                patch.set_facecolor(face)
+                patch.set_edgecolor(edge)
+                patch.set_alpha(0.9)
+                patch.set_linewidth(1.3)
+            for whisker in bp["whiskers"]:
+                whisker.set_color("#666666")
+                whisker.set_linestyle("--")
+            for cap in bp["caps"]:
+                cap.set_color("#666666")
+            for median in bp["medians"]:
+                median.set_color("#111111")
+                median.set_linewidth(1.8)
+            ax.scatter(positions, p5_vals, marker="v", s=55, color="#D07A2D",
+                       edgecolor="white", linewidth=0.5, zorder=4)
+            ax.scatter(positions, cvar_vals, marker="D", s=55, color="#8064A9",
+                       edgecolor="white", linewidth=0.5, zorder=4)
 
-        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=7)
-        ax.set_title(f'Budget={budget}', fontsize=10)
+        ax.axhline(y=100, color="#79B78D", linestyle="--", alpha=0.7, linewidth=1.0)
+        ax.axhline(y=90, color="#D95F5F", linestyle=":", alpha=0.5, linewidth=1.0)
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels, rotation=50, ha="right", fontsize=16, fontweight="bold")
+        ax.set_title(f"dim = {budget}", fontsize=22, fontweight="bold", pad=12)
         if ax_idx == 0:
-            ax.set_ylabel("CV of Random Selection")
+            ax.set_ylabel("Retention (%)", fontsize=20)
+        ax.set_ylim(35, 112)
 
-    fig.suptitle("Variance of Random Dimension Selection Across Seeds", fontsize=12, fontweight='bold', y=1.02)
-    plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, "fig_random_variance.png")
-    plt.savefig(path)
-    plt.close()
-    print(f"Saved: {path}")
+    legend_handles = [
+        plt.Line2D([0], [0], marker="v", color="w", markerfacecolor="#D07A2D",
+                   markeredgecolor="white", markersize=8, label="P5 Retention"),
+        plt.Line2D([0], [0], marker="D", color="w", markerfacecolor="#8064A9",
+                   markeredgecolor="white", markersize=8, label="CVaR-5 Retention"),
+        mpatches.Patch(facecolor=family_style["retrieval"][1], edgecolor=family_style["retrieval"][0],
+                       label="Retrieval-optimized"),
+        mpatches.Patch(facecolor=family_style["instruction"][1], edgecolor=family_style["instruction"][0],
+                       label="Instruction-conditioned"),
+        mpatches.Patch(facecolor=family_style["backbone"][1], edgecolor=family_style["backbone"][0],
+                       label="General-purpose Backbone"),
+    ]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=5,
+               bbox_to_anchor=(0.5, 0.005), frameon=True, fontsize=16,
+               framealpha=0.95, edgecolor="#CCCCCC", fancybox=True)
+    fig.suptitle("Random Dimension Selection: Retention Distribution Across Tasks",
+                 fontsize=24, fontweight="bold", y=0.97)
+    save_current_figure("fig_random_variance.png")
 
 
 # ============================================================

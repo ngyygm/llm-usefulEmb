@@ -70,11 +70,16 @@ CMAP_RET = sns.color_palette("RdYlGn", as_cmap=True)
 # ══════════════════════════════════════════════════════════════════
 # Paths & constants
 # ══════════════════════════════════════════════════════════════════
-TASK_SIMILAR_DIR = "./data/task_similar_new"
-ANALYZE_DIR = "./data/analyze_new"
-OUT_DIR = "./data/analysis_results_multidim"
-FIG_DIR = os.path.join(OUT_DIR, "figures")
-PAPER_DIR = "./paper_text"
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TASK_SIMILAR_DIR = os.path.join(ROOT, "data", "task_similar_supplement")
+ANALYZE_DIR = os.path.join(ROOT, "data", "analyze_supplement")
+OUT_DIR = os.path.join(ROOT, "data", "analysis_results_multidim")
+FIG_DIR = os.path.join(
+    ROOT,
+    "Beyond_Redundancy__Diagnosing_Information_Distribution_in_Text_Embeddings_via_Task_Aware_Dimension_Selection",
+    "figures",
+)
+PAPER_DIR = os.path.join(ROOT, "paper_text")
 
 DIMS = [16, 32, 64, 128, 256, 512]
 EXCLUDE_TASKS = {"STS17"}
@@ -134,8 +139,8 @@ CAT_SHORT = {
 }
 
 MODEL_DISPLAY = {
-    "roberta-large":          "Roberta-Large",
-    "roberta-large-InBedder": "Roberta-InBedder",
+    "roberta-large":          "RoBERTa-Large",
+    "roberta-large-InBedder": "RoBERTa-InBedder",
     "gte-large-en-v1.5":      "GTE-Large",
     "stella_en_400M_v5":      "Stella EN 400M",
     "mxbai-embed-large-v1":   "MxBai-Embed-Large",
@@ -144,11 +149,11 @@ MODEL_DISPLAY = {
     "gtr-t5-large":           "GTR-T5-Large",
     "bge-m3":                 "BGE-M3",
     "bart-base":              "BART-Base",
-    "Qwen3-Embedding-0.6B":   "Qwen3-Embedding",
+    "Qwen3-Embedding-0.6B":   "Qwen3-Embedding-0.6B",
 }
 
 # Three representative models, one per family.
-REPR_MODELS = ["roberta-large", "stella_en_400M_v5", "bart-base"]
+REPR_MODELS = ["gte-large-en-v1.5", "stella_en_400M_v5", "roberta-large-InBedder"]
 
 
 def disp(model):
@@ -346,7 +351,10 @@ def median_ci(vals, n_boot=1000, alpha=0.05, seed=0):
 
 def _save(fig, name):
     out = os.path.join(FIG_DIR, name)
+    os.makedirs(FIG_DIR, exist_ok=True)
     fig.savefig(out, bbox_inches="tight", dpi=200)
+    if not out.lower().endswith(".pdf"):
+        fig.savefig(os.path.splitext(out)[0] + ".pdf", bbox_inches="tight")
     plt.close(fig)
     print(f"  [saved] {out}")
 
@@ -750,86 +758,62 @@ def fig7_redundancy_mechanism(chunk_df, baseline_df, out_dir, models=None):
     if models is None:
         models = REPR_MODELS
     models = [m for m in models if m in chunk_df["model"].values]
-    n = len(models)
+    colors = {
+        "gte-large-en-v1.5": "#4C78A8",
+        "stella_en_400M_v5": "#F58518",
+        "roberta-large-InBedder": "#E45756",
+    }
+    markers = {
+        "gte-large-en-v1.5": "o",
+        "stella_en_400M_v5": "s",
+        "roberta-large-InBedder": "^",
+    }
 
-    fig, axes = plt.subplots(n, 2, figsize=(11, 2.8 * n + 0.6),
-                             gridspec_kw={"width_ratios": [1, 1.25]})
-    if n == 1:
-        axes = np.array([axes])
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(18.5, 5.8),
+                                     gridspec_kw={"width_ratios": [1, 1.25]})
 
-    for i, model in enumerate(models):
-        ax_a = axes[i, 0]
-        ax_b = axes[i, 1]
-
-        # (a) per-task normalized entropy histogram
+    bins = np.linspace(0.89, 1.0, 26)
+    for model in models:
+        color = colors.get(model, "#333333")
         h_vals = chunk_df[chunk_df["model"] == model]["h_norm"].values
-        ax_a.hist(h_vals, bins=20, color=PAL_CAT[i % len(PAL_CAT)],
-                  alpha=0.85, edgecolor="white")
-        ax_a.axvline(np.mean(h_vals), color="black", lw=1.4, ls="--",
-                     label=f"mean = {np.mean(h_vals):.4f}")
-        ax_a.set_xlim(0.96, 1.001)
-        ax_a.set_xlabel("Normalized entropy $H_{\\mathrm{norm}}$", fontsize=9)
-        ax_a.set_ylabel("# tasks", fontsize=9)
-        ax_a.set_title(f"(a) {disp(model)} — task-level $H_{{\\mathrm{{norm}}}}$",
-                       fontsize=10, fontweight="bold")
-        ax_a.legend(fontsize=8, loc="upper left")
+        ax_a.hist(h_vals, bins=bins, histtype="stepfilled", alpha=0.22,
+                  color=color, edgecolor=color, linewidth=2.0, label=disp(model))
 
-        # (b) (head − end)/(full − end) curves vs cws (selected chunks).
-        # Use the *median* across tasks because, for some
-        # weak-full-baseline tasks (e.g. Roberta-Large on retrieval),
-        # full $-$ end is tiny and noisy so the per-task ratio blows up,
-        # which would dominate the mean.
-        bdf = baseline_df[baseline_df["model"] == model].dropna(
-            subset=["head", "end", "full"])
-        bdf = bdf[bdf["full"] > bdf["end"] + 1e-6]
+    for model in models:
+        color = colors.get(model, "#333333")
+        marker = markers.get(model, "o")
+        bdf = baseline_df[baseline_df["model"] == model].dropna(subset=["head", "end", "full"])
         rows = []
         for (task, d), grp in bdf.groupby(["task", "dim"]):
             f_h = grp["head"].mean()
             f_e = grp["end"].mean()
             f_f = grp["full"].mean()
-            denom = f_f - f_e
-            num = f_h - f_e
-            if denom > 1e-6:
-                rows.append({"task": task, "dim": d, "gap": num / denom,
-                             "category": TASK_TO_CAT.get(task)})
+            if f_f and f_f > 0:
+                rows.append({"task": task, "dim": d, "gap": (f_h - f_e) / f_f})
         gap_df = pd.DataFrame(rows)
-
-        cat_color = {c: PAL_CAT[k % len(PAL_CAT)] for k, c in enumerate(CAT_ORDER)}
-        for task, sub in gap_df.groupby("task"):
-            sub = sub.sort_values("dim")
-            cat = TASK_TO_CAT.get(task)
-            sub_clip = sub.copy()
-            sub_clip["gap"] = sub_clip["gap"].clip(upper=1.5)
-            ax_b.plot(sub_clip["dim"], sub_clip["gap"],
-                      color=cat_color.get(cat, "gray"),
-                      lw=0.8, alpha=0.30)
-
         med_gap = gap_df.groupby("dim")["gap"].median().sort_index()
-        ax_b.plot(med_gap.index, med_gap.values, color="black", lw=2.4,
-                  marker="o", ms=4.5, label="Task median")
-        ax_b.axhline(1.0, color="red", lw=1, ls="--", alpha=0.7,
-                     label="Full-dim level")
-        ax_b.set_xscale("log", base=2)
-        dims_ticks = [d for d in (2, 8, 32, 128, 512, 768)
-                      if d in med_gap.index]
-        if dims_ticks:
-            ax_b.set_xticks(dims_ticks)
-            ax_b.set_xticklabels(dims_ticks)
-        ax_b.set_ylim(-0.05, 1.55)
-        ax_b.set_xlabel("Number of selected dimensions", fontsize=9)
-        ax_b.set_ylabel(
-            "$(\\mathrm{best} - \\mathrm{worst}) / (\\mathrm{full} - \\mathrm{worst})$",
-            fontsize=9,
-        )
-        ax_b.set_title(f"(b) {disp(model)} — optimized–worst gap closure",
-                       fontsize=10, fontweight="bold")
-        ax_b.legend(fontsize=8, loc="lower right")
+        ax_b.plot(med_gap.index, med_gap.values, color=color, lw=2.2,
+                  marker=marker, ms=6.5, label=disp(model))
 
-    fig.suptitle(
-        "Redundancy Mechanism — Entropy & Gap Closure (3 representative models)",
-        fontsize=13, fontweight="bold", y=1.001,
-    )
-    fig.tight_layout(rect=[0, 0, 1, 0.985])
+    ax_a.set_xlim(0.89, 1.0)
+    ax_a.set_ylim(0, None)
+    ax_a.set_xlabel("Normalized Entropy")
+    ax_a.set_ylabel("Number of Tasks")
+    ax_a.set_title("(a) Entropy Histograms\n(three focal models)", fontsize=16)
+    ax_a.grid(True, alpha=0.35)
+
+    ax_b.axhline(0, color="gray", lw=1.0)
+    ax_b.set_xlim(-5, 780)
+    ax_b.set_ylim(-0.012, 0.262)
+    ax_b.set_xlabel("Number of Chunks Selected")
+    ax_b.set_ylabel("Best-Poor Gap (normalized)")
+    ax_b.set_title("(b) Selection Quality Gap\n(three focal models)", fontsize=16)
+    ax_b.grid(True, alpha=0.35)
+
+    handles, labels = ax_b.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=3,
+               bbox_to_anchor=(0.5, -0.08), frameon=True, fontsize=12)
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
     _save(fig, "fig7_redundancy_mechanism.png")
 
 

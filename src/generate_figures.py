@@ -12,6 +12,7 @@ Creates:
 import os
 import json
 import argparse
+import re
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -20,6 +21,131 @@ import matplotlib.patches as mpatches
 from matplotlib.colors import LinearSegmentedColormap
 from collections import defaultdict
 
+MODEL_DISPLAY_NAMES = {
+    "stella_en_400M_v5": "Stella EN 400M",
+    "gte-large-en-v1.5": "GTE-Large",
+    "roberta-large-InBedder": "RoBERTa-InBedder",
+    "bart-base": "BART-Base",
+    "stella_en_400M_v5-GEDI-epoch_3": "Stella-GEDI",
+    "bge-m3": "BGE-M3",
+    "instructor-large": "Instructor-Large",
+    "gte-base": "GTE-Base",
+    "roberta-large": "RoBERTa-Large",
+    "gtr-t5-large": "GTR-T5-Large",
+    "mxbai-embed-large-v1": "MxBai-Embed-Large",
+}
+
+TASK_CATEGORY_COLORS = {
+    "Classification": "#3498DB",
+    "Clustering": "#E67E22",
+    "STS": "#9B59B6",
+    "Retrieval": "#1ABC9C",
+    "Reranking": "#E74C3C",
+    "PairClassification": "#F1C40F",
+    "Summarization": "#2ECC71",
+}
+
+TASK_CATEGORIES = {
+    "Classification": [
+        "AmazonCounterfactualClassification", "AmazonReviewsClassification",
+        "Banking77Classification", "EmotionClassification", "ImdbClassification",
+        "MTOPDomainClassification", "MTOPIntentClassification",
+        "MassiveIntentClassification", "MassiveScenarioClassification",
+        "ToxicConversationsClassification", "TweetSentimentExtractionClassification",
+    ],
+    "Clustering": [
+        "BiorxivClusteringS2S", "MedrxivClusteringS2S", "TwentyNewsgroupsClustering",
+    ],
+    "PairClassification": [
+        "SprintDuplicateQuestions", "TwitterSemEval2015", "TwitterURLCorpus",
+    ],
+    "Reranking": [
+        "AskUbuntuDupQuestions", "MindSmallReranking", "SciDocsRR",
+        "StackOverflowDupQuestions",
+    ],
+    "Retrieval": [
+        "ArguAna", "CQADupstackEnglishRetrieval", "NFCorpus", "SCIDOCS", "SciFact",
+    ],
+    "STS": [
+        "BIOSSES", "SICK-R", "STS12", "STS13", "STS14", "STS15", "STS16", "STS17",
+        "STSBenchmark",
+    ],
+    "Summarization": ["SummEval"],
+}
+
+REFERENCE_TRANSFER_ORDER = [
+    "MedrxivClusteringS2S",
+    "CQADupstackEnglishRetrieval",
+    "ImdbClassification",
+    "SummEval",
+    "StackOverflowDupQuestions",
+    "STS16",
+    "SciDocsRR",
+    "ArguAna",
+    "STS15",
+    "ToxicConversationsClassification",
+    "NFCorpus",
+    "MTOPIntentClassification",
+    "Banking77Classification",
+    "BiorxivClusteringS2S",
+    "SprintDuplicateQuestions",
+    "BIOSSES",
+    "SCIDOCS",
+    "STS13",
+    "MassiveScenarioClassification",
+    "AskUbuntuDupQuestions",
+    "STS12",
+    "TweetSentimentExtractionClassification",
+    "STS14",
+    "AmazonReviewsClassification",
+    "STSBenchmark",
+    "TwitterSemEval2015",
+    "TwitterURLCorpus",
+    "MassiveIntentClassification",
+    "SciFact",
+    "AmazonCounterfactualClassification",
+    "TwentyNewsgroupsClustering",
+    "EmotionClassification",
+    "SICK-R",
+    "MTOPDomainClassification",
+]
+
+FIG2_DISPLAY_LABELS = {
+    "MedrxivClusteringS2S": "MedrxivClustS2S",
+    "CQADupstackEnglishRetrieval": "CQADupstackEnglish",
+    "ImdbClassification": "ImdbCls",
+    "SummEval": "SummEval",
+    "StackOverflowDupQuestions": "StackOverflowDupQ",
+    "STS16": "STS16",
+    "SciDocsRR": "SciDocsRR",
+    "ArguAna": "ArguAna",
+    "STS15": "STS15",
+    "ToxicConversationsClassification": "ToxicConvCls",
+    "NFCorpus": "NFCorpus",
+    "MTOPIntentClassification": "MTOPIntentCls",
+    "Banking77Classification": "Banking77Cls",
+    "BiorxivClusteringS2S": "BiorxivClustS2S",
+    "SprintDuplicateQuestions": "SprintDupQ",
+    "BIOSSES": "BIOSSES",
+    "SCIDOCS": "SCIDOCS",
+    "STS13": "STS13",
+    "MassiveScenarioClassification": "MassiveScenarioCls",
+    "AskUbuntuDupQuestions": "AskUbuntuDupQ",
+    "STS12": "STS12",
+    "TweetSentimentExtractionClassification": "TweetSentExtCls",
+    "STS14": "STS14",
+    "AmazonReviewsClassification": "AmzReviewsCls",
+    "STSBenchmark": "STSBenchmark",
+    "TwitterSemEval2015": "TwitterSemEval2015",
+    "TwitterURLCorpus": "TwitterURLCorpus",
+    "MassiveIntentClassification": "MassiveIntentCls",
+    "SciFact": "SciFact",
+    "AmazonCounterfactualClassification": "AmzCntrfCls",
+    "TwentyNewsgroupsClustering": "TwentyNewsgroupsCl",
+    "EmotionClassification": "EmotionCls",
+    "SICK-R": "SICK-R",
+    "MTOPDomainClassification": "MTOPDomainCls",
+}
 
 def load_results(data_dir):
     path = os.path.join(data_dir, "analysis_results.json")
@@ -42,6 +168,151 @@ def set_style():
         'axes.grid': True,
         'grid.alpha': 0.3,
     })
+
+
+def classify_task_category(task_name):
+    """Map a task to its high-level MTEB category."""
+    for category, tasks in TASK_CATEGORIES.items():
+        if task_name in tasks:
+            return category
+    return "Unknown"
+
+
+def wrap_task_name(task_name, max_lines=2):
+    """Wrap CamelCase task names without inserting spaces."""
+    if len(task_name) <= 12:
+        return task_name
+
+    pieces = re.findall(r"[A-Z]+(?=[A-Z][a-z]|\d|$)|[A-Z]?[a-z]+|\d+", task_name)
+    if len(pieces) <= 1:
+        return task_name
+
+    if max_lines <= 1:
+        return task_name
+
+    target_lines = min(max_lines, len(pieces))
+    total_len = sum(len(piece) for piece in pieces)
+    target_len = max(total_len / target_lines, max(len(piece) for piece in pieces))
+
+    lines = []
+    current = ""
+    remaining_lines = target_lines
+    for index, piece in enumerate(pieces):
+        remaining_pieces = len(pieces) - index
+        candidate = current + piece
+        force_break = remaining_pieces == remaining_lines
+        if current and (len(candidate) > target_len * 1.12) and not force_break:
+            lines.append(current)
+            current = piece
+            remaining_lines -= 1
+        else:
+            current = candidate
+            if force_break:
+                lines.append(current)
+                current = ""
+                remaining_lines -= 1
+    if current:
+        lines.append(current)
+
+    if len(lines) > max_lines:
+        head = lines[:max_lines - 1]
+        tail = "".join(lines[max_lines - 1:])
+        lines = head + [tail]
+
+    return "\n".join(lines)
+
+
+def shorten_task_name(task_name, max_len=16):
+    """Compact task labels enough to allow larger publication-safe fonts."""
+    replacements = [
+        ("PairClassification", "PairCls"),
+        ("SentimentExtraction", "SentExt"),
+        ("Counterfactual", "Counterf"),
+        ("DuplicateQuestions", "DupQs"),
+        ("Conversations", "Convs"),
+        ("Classification", "Cls"),
+        ("ClusteringS2S", "ClustS2S"),
+        ("Clustering", "Clust"),
+        ("Retrieval", "Retr"),
+        ("Reranking", "RR"),
+        ("Questions", "Qs"),
+        ("Newsgroups", "NewsGrp"),
+        ("Benchmark", "Bench"),
+        ("Scenario", "Scen"),
+        ("Intent", "Int"),
+        ("Domain", "Dom"),
+        ("English", "Eng"),
+    ]
+    short_name = task_name
+    for old, new in replacements:
+        short_name = short_name.replace(old, new)
+    return short_name[:max_len]
+
+
+def load_raw_transfer_matrix(model_name):
+    """Load the full donor-target matrix from raw task_similar outputs when available."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    raw_path = os.path.join(repo_root, "data", "task_similar", f"{model_name}.json")
+    if not os.path.exists(raw_path):
+        return None
+
+    with open(raw_path, "r") as f:
+        raw_data = json.load(f)
+
+    tasks = sorted(set(raw_data) | {target for targets in raw_data.values() for target in targets})
+    self_scores = {}
+    for task in tasks:
+        self_score = raw_data.get(task, {}).get(task)
+        if isinstance(self_score, (int, float)) and self_score != 0:
+            self_scores[task] = self_score
+
+    if len(self_scores) != len(tasks):
+        return None
+
+    matrix = np.full((len(tasks), len(tasks)), np.nan)
+    for i, donor in enumerate(tasks):
+        donor_scores = raw_data.get(donor, {})
+        for j, target in enumerate(tasks):
+            score = donor_scores.get(target)
+            self_score = self_scores.get(target)
+            if isinstance(score, (int, float)) and self_score:
+                matrix[i, j] = score / self_score
+
+    return {"tasks": tasks, "self_scores": self_scores, "matrix": matrix}
+
+
+def build_transfer_matrix_from_summary(model_data):
+    """Fallback for legacy summaries that already contain donor->target scores."""
+    tasks = model_data["tasks"]
+    matrix = np.full((len(tasks), len(tasks)), np.nan)
+    self_scores = model_data.get("self_transfer", {})
+    for i, donor in enumerate(tasks):
+        donor_scores = model_data.get(donor, {})
+        for j, target in enumerate(tasks):
+            score = donor_scores.get(target)
+            self_score = self_scores.get(target)
+            if isinstance(score, (int, float)) and isinstance(self_score, (int, float)) and self_score != 0:
+                matrix[i, j] = score / self_score
+
+    return {"tasks": tasks, "self_scores": self_scores, "matrix": matrix}
+
+
+def load_analyze_defaults(model_name):
+    """Load default unpruned task scores used to compute retention percentages."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    analyze_path = os.path.join(repo_root, "data", "analyze", f"{model_name}.json")
+    if not os.path.exists(analyze_path):
+        return {}
+
+    with open(analyze_path, "r") as f:
+        analyze_data = json.load(f)
+
+    defaults = {}
+    for task_name, task_data in analyze_data.get("task_name", {}).items():
+        score = task_data.get("defult_score")
+        if isinstance(score, (int, float)) and score != 0:
+            defaults[task_name] = score
+    return defaults
 
 
 def fig1_optimized_vs_random(results, output_dir):
@@ -108,85 +379,106 @@ def fig2_cross_task_heatmap(results, output_dir):
     """Figure 2: Cross-task transfer retention heatmap."""
     set_style()
     transfer_data = results["cross_task_transfer"]
+    generic_output_name = "fig2_transfer_heatmap.png"
 
     for model_name, model_data in transfer_data.items():
-        tasks = model_data["tasks"]
-        n = len(tasks)
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        raw_path = os.path.join(repo_root, "data", "task_similar", f"{model_name}.json")
+        if os.path.exists(raw_path):
+            with open(raw_path, "r") as f:
+                raw_transfer = json.load(f)
+        else:
+            raw_transfer = None
 
-        # Build retention matrix
-        matrix = np.zeros((n, n))
-        for i, donor in enumerate(tasks):
-            for j, target in enumerate(tasks):
-                if donor in model_data and target in model_data.get(donor, {}):
-                    donor_score = model_data[donor][target]
-                    self_score = model_data.get("self_transfer", {}).get(target, 1)
-                    if self_score and self_score != 0:
-                        matrix[i, j] = donor_score / self_score
-                    else:
-                        matrix[i, j] = np.nan
-                else:
-                    matrix[i, j] = np.nan
+        defaults = load_analyze_defaults(model_name)
+        if raw_transfer:
+            ordered_tasks = [task for task in REFERENCE_TRANSFER_ORDER if task in raw_transfer and task in defaults]
+            if not ordered_tasks:
+                all_tasks = sorted(set(raw_transfer) | {target for targets in raw_transfer.values() for target in targets})
+                ordered_tasks = [task for task in all_tasks if task in defaults and task != "STS17"]
 
-        # Sort tasks by self-transfer (ascending = weakest first)
-        self_scores = [model_data.get("self_transfer", {}).get(t, 0) for t in tasks]
-        sort_idx = np.argsort(self_scores)
-        tasks_sorted = [tasks[i] for i in sort_idx]
-        matrix_sorted = matrix[sort_idx][:, sort_idx]
+            matrix_sorted = np.full((len(ordered_tasks), len(ordered_tasks)), np.nan)
+            for row_index, donor in enumerate(ordered_tasks):
+                donor_scores = raw_transfer.get(donor, {})
+                for col_index, target in enumerate(ordered_tasks):
+                    score = donor_scores.get(target)
+                    baseline = defaults.get(target)
+                    if isinstance(score, (int, float)) and isinstance(baseline, (int, float)) and baseline != 0:
+                        matrix_sorted[row_index, col_index] = score / baseline * 100.0
+            tasks_sorted = ordered_tasks
+        else:
+            matrix_source = build_transfer_matrix_from_summary(model_data)
+            tasks_sorted = [task for task in REFERENCE_TRANSFER_ORDER if task in matrix_source["tasks"] and task != "STS17"]
+            if not tasks_sorted:
+                tasks_sorted = [task for task in matrix_source["tasks"] if task != "STS17"]
+            index_lookup = {task: i for i, task in enumerate(matrix_source["tasks"])}
+            picked_indices = [index_lookup[task] for task in tasks_sorted]
+            matrix_sorted = matrix_source["matrix"][picked_indices][:, picked_indices] * 100.0
 
-        # Shorten task names for display
-        short_names = [t.replace("Classification", "Cls").replace("Clustering", "Clust")
-                       .replace("PairClassification", "Pair").replace("Reranking", "Rerank")
-                       .replace("Retrieval", "Retr").replace("Summarization", "Summ")[:20]
-                      for t in tasks_sorted]
+        n = len(tasks_sorted)
+        if n == 0:
+            print(f"Skipped: no aligned transfer tasks for {model_name}")
+            continue
+        display_labels = [FIG2_DISPLAY_LABELS.get(task, shorten_task_name(task, max_len=18)) for task in tasks_sorted]
 
-        fig, ax = plt.subplots(figsize=(14, 12))
-        cmap = LinearSegmentedColormap.from_list("rg", ["#E74C3C", "#F39C12", "#27AE60"])
-        im = ax.imshow(matrix_sorted, cmap=cmap, vmin=0.5, vmax=1.2, aspect='auto')
-        plt.colorbar(im, ax=ax, label='Retention Ratio', shrink=0.8)
+        display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
+        tick_fontsize = 10.0
+        axis_label_fontsize = 13.0
+        title_fontsize = 13.4
+        annotation_fontsize = 6.3
+        colorbar_label_fontsize = 11.8
+        colorbar_tick_fontsize = 9.2
+
+        fig, ax = plt.subplots(figsize=(13.8, 12.0))
+        cmap = LinearSegmentedColormap.from_list("retention_pct", ["#E74C3C", "#F39C12", "#30B05C"])
+        im = ax.imshow(matrix_sorted, cmap=cmap, vmin=85.0, vmax=105.0, aspect="auto", interpolation="nearest")
+        cbar = plt.colorbar(im, ax=ax, shrink=0.82)
+        cbar.set_label("Retention (%)", fontsize=colorbar_label_fontsize, labelpad=18)
+        cbar.set_ticks(np.arange(85.0, 105.1, 2.5))
+        cbar.ax.tick_params(labelsize=colorbar_tick_fontsize)
 
         ax.set_xticks(range(n))
         ax.set_yticks(range(n))
-        ax.set_xticklabels(short_names, rotation=90, fontsize=6)
-        ax.set_yticklabels(short_names, fontsize=6)
-        ax.set_title(f'{model_name}\nCross-Task Dimension Importance Transfer', fontsize=14)
-
-        # Add category labels
-        categories = {
-            "Classification": "#3498DB", "Clustering": "#E67E22",
-            "STS": "#9B59B6", "Retrieval": "#1ABC9C",
-            "Reranking": "#E74C3C", "PairClassification": "#F1C40F",
-            "Summarization": "#2ECC71"
-        }
-        def classify_task_category(task_name, task_categories=None):
-            if task_categories is None:
-                task_categories = {
-                    "Classification": [
-                        'AmazonCounterfactualClassification', 'AmazonReviewsClassification',
-                        'Banking77Classification', 'EmotionClassification', 'ImdbClassification',
-                        'MTOPDomainClassification', 'MTOPIntentClassification',
-                        'MassiveIntentClassification', 'MassiveScenarioClassification',
-                        'ToxicConversationsClassification', 'TweetSentimentExtractionClassification'
-                    ],
-                    "Clustering": ['BiorxivClusteringS2S', 'MedrxivClusteringS2S', 'TwentyNewsgroupsClustering'],
-                    "PairClassification": ['SprintDuplicateQuestions', 'TwitterSemEval2015', 'TwitterURLCorpus'],
-                    "Reranking": ['AskUbuntuDupQuestions', 'MindSmallReranking', 'SciDocsRR', 'StackOverflowDupQuestions'],
-                    "Retrieval": ['ArguAna', 'CQADupstackEnglishRetrieval', 'NFCorpus', 'SCIDOCS', 'SciFact'],
-                    "STS": ['BIOSSES', 'SICK-R', 'STS12', 'STS13', 'STS14', 'STS15', 'STS16', 'STS17', 'STSBenchmark'],
-                    "Summarization": ['SummEval'],
-                }
-            for cat, tasks in task_categories.items():
-                if task_name in tasks:
-                    return cat
-            return "Unknown"
+        ax.set_xticklabels(
+            display_labels,
+            rotation=90,
+            fontsize=tick_fontsize,
+            ha="center",
+            va="top",
+        )
+        ax.set_yticklabels(display_labels, fontsize=tick_fontsize)
+        ax.tick_params(axis="x", pad=6)
+        ax.tick_params(axis="y", pad=6)
+        ax.set_xlabel("Target Task", fontsize=axis_label_fontsize, labelpad=10)
+        ax.set_ylabel("Source Task (importance ranking donor)", fontsize=axis_label_fontsize, labelpad=26)
+        ax.set_title(f"{display_name} Cross-Task Dimension Importance Transfer",
+                     fontsize=title_fontsize, pad=10)
+        ax.grid(False)
 
         for i, task in enumerate(tasks_sorted):
-            cat = classify_task_category(task)
-            if cat in categories:
-                ax.get_yticklabels()[i].set_color(categories[cat])
+            category = classify_task_category(task)
+            color = TASK_CATEGORY_COLORS.get(category)
+            if color:
+                ax.get_yticklabels()[i].set_color(color)
+                ax.get_xticklabels()[i].set_color(color)
+            ax.get_yticklabels()[i].set_multialignment("right")
 
-        plt.tight_layout()
+        # Match the reference figure: annotate the self-transfer diagonal only.
+        for i in range(n):
+            diagonal_value = matrix_sorted[i, i]
+            if np.isfinite(diagonal_value):
+                ax.text(i, i, f"{diagonal_value:.0f}", ha="center", va="center",
+                        fontsize=annotation_fontsize, color="black")
+
+        fig.subplots_adjust(left=0.25, bottom=0.29, right=0.90, top=0.92)
         path = os.path.join(output_dir, f"fig2_transfer_heatmap_{model_name}.png")
         plt.savefig(path)
+        plt.savefig(os.path.splitext(path)[0] + ".pdf")
+        if model_name == "gte-large-en-v1.5":
+            generic_path = os.path.join(output_dir, generic_output_name)
+            plt.savefig(generic_path)
+            plt.savefig(os.path.splitext(generic_path)[0] + ".pdf")
+            print(f"Saved: {generic_path}")
         plt.close()
         print(f"Saved: {path}")
 

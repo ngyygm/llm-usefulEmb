@@ -11,8 +11,13 @@ Run AFTER rank_chunk_mteb.py completes for all models.
 
 import json
 import os
+from pathlib import Path
 import numpy as np
 # Gini is not in scipy, compute inline
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EXCLUDED_TASKS = {"STS17", "STS22"}
 
 
 def compute_entropy(chunk_scores):
@@ -78,6 +83,8 @@ def analyze_model(model_data):
 
     task_data = model_data.get("task_name", {})
     for task_name, task_info in task_data.items():
+        if task_name in EXCLUDED_TASKS:
+            continue
         # Get chunk results from win_size=2 (most granular)
         split_ws = task_info.get("split_win_size", {})
         if "2" in split_ws:
@@ -127,8 +134,8 @@ def analyze_model(model_data):
 
 
 def main():
-    analyze_dir = "/home/linkco/exa/llm-usefulEeb/data/analyze"
-    output_path = "/home/linkco/exa/llm-usefulEeb/data/experiment_results/all_models_entropy.json"
+    analyze_dir = REPO_ROOT / "data" / "analyze"
+    output_path = REPO_ROOT / "data" / "experiment_results" / "all_models_entropy.json"
 
     all_results = {}
 
