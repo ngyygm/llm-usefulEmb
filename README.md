@@ -4,7 +4,6 @@
 
 **Evidence That Task-Aware Embedding Pruning Does Not Outperform Random Selection**
 
-[![Paper](https://img.shields.io/badge/Paper-PDF-red)](paper/paper.pdf)
 [![Data](https://img.shields.io/badge/Data-HuggingFace-yellow)](https://huggingface.co/datasets/heihei/prune-to-prosper-data)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -17,14 +16,10 @@ Modern text embedding models produce high-dimensional vectors (768--4096 dimensi
 We systematically evaluate **5 pruning strategies** across **12 models** and **35 MTEB tasks**, finding that task-optimized oracle selection provides only +2--5% improvement over random for general-purpose models (all $p < 0.001$, Cohen's $d < 1.1$)---despite having full access to task-specific evaluation data.
 
 <p align="center">
-  <img src="paper/figures/fig_method_framework.png" alt="Method Framework" width="90%">
+  <img src="paper/figures/fig_concept_overview_rgb.jpg" alt="Research framework and main findings" width="90%">
 </p>
 
 ## Core Finding
-
-<p align="center">
-  <img src="paper/figures/fig_concept_overview.png" alt="Concept Overview" width="90%">
-</p>
 
 A 1024-dimensional embedding is reduced to 256 dimensions via three strategies:
 - **Random** → 97.5% retention ✓
@@ -59,10 +54,6 @@ Retention ratio across pruning ratios for three models. The gap between Optimize
 | Roberta-InBedder | +8.19% | [+5.99%, +10.56%] | 1.17 | <0.001 |
 | Roberta-Large | +8.56% | [−5.85%, +18.88%] | 0.23 | 0.191 |
 
-<p align="center">
-  <img src="paper/figures/fig_opt_random_gap_all_models.png" alt="Gap across models" width="75%">
-</p>
-
 All contrastively-trained embedding models cluster in the +2–5% range, while non-contrastively trained encoder-only models show larger gaps.
 
 ### All Five Methods Comparison
@@ -88,15 +79,11 @@ Magnitude-based dimension selection—the most intuitive heuristic—has **zero 
 
 ### Finding 3: Cross-Task Transfer Paradox
 
-<p align="center">
-  <img src="paper/figures/fig_transfer_paradox.png" alt="Transfer Paradox" width="90%">
-</p>
-
 **The paradox**: Tasks completely disagree on *which* dimensions are important (ρ ≈ 0.001), but using any task's ranking to prune for any other task still retains 95–100% of performance.
 
 <p align="center">
-  <img src="paper/figures/fig2_transfer_heatmap.png" alt="Transfer Heatmap" width="48%">
-  <img src="paper/figures/fig5_category_transfer.png" alt="Category Transfer" width="48%">
+  <img src="paper/figures/fig5_transfer_and_rho_combined.png" alt="Cross-task transfer and rank correlation" width="48%">
+  <img src="paper/figures/fig2_transfer_heatmap.png" alt="Transfer heatmap (GTE-Large)" width="48%">
 </p>
 
 Cross-task transfer retention across 10 models:
@@ -117,7 +104,7 @@ Cross-task transfer retention across 10 models:
 ### Mechanism: Universal Redundancy
 
 <p align="center">
-  <img src="paper/figures/fig7_redundancy_mechanism.png" alt="Redundancy Mechanism" width="90%">
+  <img src="paper/figures/fig8_evidence_summary.png" alt="Top-k concentration curves and entropy boxplots" width="90%">
 </p>
 
 **Why** are dimensions interchangeable? Dimension importance is nearly uniform:
@@ -132,7 +119,7 @@ Cross-task transfer retention across 10 models:
 Entropy near 1.0 means no dimension dominates. This explains why any sufficiently large subset of dimensions preserves most information.
 
 <p align="center">
-  <img src="paper/figures/fig_entropy_all_models.png" alt="Entropy all models" width="75%">
+  <img src="paper/figures/fig7_redundancy_mechanism.png" alt="Redundancy mechanism: entropy histograms and selection gap" width="90%">
 </p>
 
 ### Basis Independence
@@ -194,10 +181,10 @@ All models are evaluated on **35 MTEB tasks** across 6 categories: Classificatio
 
 ```
 ├── paper/              # Paper source
-│   ├── main.tex        # LaTeX source
-│   ├── paper.pdf       # Compiled PDF
-│   ├── references.bib  # Bibliography
-│   └── figures/        # All figures (19 images)
+│   ├── latex/          # LaTeX source (ACL template)
+│   │   ├── acl_latex.tex
+│   │   └── custom.bib  # Bibliography
+│   └── figures/        # All figures (PDF source + PNG for README)
 ├── src/                # Code
 │   ├── rank_chunk_mteb.py           # Main MTEB chunk evaluation
 │   ├── basis_sensitivity.py         # Basis independence experiment
