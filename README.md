@@ -13,7 +13,7 @@
 
 Modern text embedding models produce high-dimensional vectors (768--4096 dimensions) where **dimensions are highly interchangeable**: randomly removing up to 75% of dimensions causes only minor performance degradation. Even the task-optimized oracle---with full access to task-specific evaluation data---provides only a modest improvement over random (+2--5% for general-purpose models).
 
-We systematically evaluate **5 pruning strategies** across **12 models** and **35 MTEB tasks**, finding that task-optimized oracle selection provides only +2--5% improvement over random for general-purpose models (all $p < 0.001$, Cohen's $d < 1.1$)---despite having full access to task-specific evaluation data.
+We systematically evaluate **5 pruning strategies** across **11 models** and **34 MTEB tasks**, finding that task-optimized oracle selection provides only +2--5% improvement over random for general-purpose models (all $p < 0.001$, Cohen's $d < 1.1$)---despite having full access to task-specific evaluation data.
 
 <p align="center">
   <img src="paper/figures/fig_concept_overview_rgb.jpg" alt="Research framework and main findings" width="90%">
@@ -38,7 +38,7 @@ The gap between random and the task-optimized oracle is only +2.4%, despite the 
   <img src="paper/figures/fig6_pruning_ratio_sweep.png" alt="Pruning Ratio Sweep" width="90%">
 </p>
 
-Retention ratio across pruning ratios for three models. The gap between Optimized (green) and Random (gray) is negligible for strong models (GTE-Large, Stella). Only Roberta-InBedder (a task-specifically fine-tuned model) shows a meaningful gap.
+Retention ratio across pruning ratios for three models. The gap between Optimized (green) and Random (gray) is negligible for strong models (GTE-Large, Stella). Only RoBERTa-InBedder (a task-specifically fine-tuned model) shows a meaningful gap.
 
 | Model | Δ (Opt − Rnd) | 95% CI | Cohen's d | p<sub>holm</sub> |
 |-------|---------------|--------|-----------|---------|
@@ -49,10 +49,10 @@ Retention ratio across pruning ratios for three models. The gap between Optimize
 | GTE-Base | +3.45% | [+2.11%, +4.93%] | 0.81 | <0.001 |
 | BGE-M3 | +4.62% | [+3.21%, +6.13%] | 1.04 | <0.001 |
 | GTR-T5-Large | +4.75% | [+2.98%, +6.67%] | 0.86 | <0.001 |
-| Qwen3-Embedding | +5.01% | [+3.36%, +6.84%] | 0.97 | <0.001 |
+| Qwen3-Embedding-0.6B | +5.01% | [+3.36%, +6.84%] | 0.97 | <0.001 |
 | BART-Base | +10.08% | [+6.28%, +13.73%] | 0.90 | <0.001 |
-| Roberta-InBedder | +8.19% | [+5.99%, +10.56%] | 1.17 | <0.001 |
-| Roberta-Large | +8.56% | [−5.85%, +18.88%] | 0.23 | 0.191 |
+| RoBERTa-InBedder | +8.19% | [+5.99%, +10.56%] | 1.17 | <0.001 |
+| RoBERTa-Large | +8.56% | [−5.85%, +18.88%] | 0.23 | 0.191 |
 
 All contrastively-trained embedding models cluster in the +2–5% range, while non-contrastively trained encoder-only models show larger gaps.
 
@@ -90,13 +90,13 @@ Cross-task transfer retention across 10 models:
 
 | Model | Mean Transfer Ret. | 95% CI |
 |-------|-------------------|--------|
-| Roberta-Large | 100.4% | [87.9%, 123.8%] |
-| Roberta-InBedder | 99.2% | [91.2%, 109.4%] |
+| RoBERTa-Large | 100.4% | [87.9%, 123.8%] |
+| RoBERTa-InBedder | 99.2% | [91.2%, 109.4%] |
 | GTE-Large | 97.5% | [90.7%, 100.1%] |
 | Stella | 97.4% | [91.2%, 100.7%] |
 | MxBai-Embed-Large | 97.2% | [91.3%, 99.9%] |
 | Instructor-Large | 96.9% | [89.7%, 100.4%] |
-| Qwen3-Embedding | 96.8% | [96.6%, 97.1%] |
+| Qwen3-Embedding-0.6B | 96.8% | [96.6%, 97.1%] |
 | GTE-Base | 96.7% | [91.4%, 100.1%] |
 | GTR-T5-Large | 95.9% | [87.6%, 100.8%] |
 | BGE-M3 | 94.8% | [81.2%, 101.1%] |
@@ -132,7 +132,7 @@ Interchangeability holds under **all tested basis transformations**—original, 
 
 ### Boundary Case: Task-Specific Fine-Tuning
 
-Roberta-Large-InBedder (task-specifically fine-tuned for retrieval) shows the largest optimized–random gap (+8.19%), confirming that **specialized training creates exploitable dimension structure**. This provides a practical diagnostic: a large optimized–random gap indicates a model is specialized for narrow tasks.
+RoBERTa-InBedder (task-specifically fine-tuned for retrieval) shows the largest optimized–random gap (+8.19%), confirming that **specialized training creates exploitable dimension structure**. This provides a practical diagnostic: a large optimized–random gap indicates a model is specialized for narrow tasks.
 
 ### Optimized vs Random Scatter
 
@@ -146,24 +146,23 @@ All 11 models cluster near the diagonal with optimized slightly above random.
 
 ## Models Evaluated
 
-We evaluate **12 models** spanning diverse architectures:
+We evaluate **11 models** spanning diverse architectures, grouped into 3 families:
 
-| Model | Dims | Training | Detailed Analysis |
-|-------|------|----------|:-:|
-| GTE-Large | 1024 | Contrastive | ✓ |
-| Stella EN 400M | 1024 | Contrastive | ✓ |
-| Roberta-Large-InBedder | 1024 | Task-specific fine-tuning | ✓ |
-| BGE-M3 | 1024 | Multi-lingual contrastive | ✓ |
-| GTE-Qwen2 | 1536 | Contrastive | ✓ |
-| Qwen3-Embedding | 1024 | Contrastive | ✓ |
-| MxBai-Embed-Large | 1024 | Contrastive | ✓ |
-| Instructor-Large | 768 | Instruction-tuned | ✓ |
-| GTE-Base | 768 | Contrastive | ✓ |
-| GTR-T5-Large | 768 | Contrastive | ✓ |
-| Roberta-Large | 1024 | MLM only | ✓ |
-| BART-Base | 768 | Denoising autoencoder | ✓ |
+| Model | Dims | Family |
+|-------|:----:|--------|
+| RoBERTa-Large | 1024 | General-purpose Backbone |
+| BART-Base | 768 | General-purpose Backbone |
+| RoBERTa-InBedder | 1024 | Instruction-conditioned |
+| Qwen3-Embedding-0.6B | 1024 | Instruction-conditioned |
+| Stella EN 400M | 1024 | Instruction-conditioned |
+| Instructor-Large | 768 | Instruction-conditioned |
+| GTR-T5-Large | 768 | Retrieval-optimized |
+| BGE-M3 | 1024 | Retrieval-optimized |
+| GTE-Base | 768 | Retrieval-optimized |
+| MxBai-Embed-Large | 1024 | Retrieval-optimized |
+| GTE-Large | 1024 | Retrieval-optimized |
 
-All models are evaluated on **35 MTEB tasks** across 6 categories: Classification, Clustering, Retrieval, Reranking, STS, and Pair Classification.
+All models are evaluated on **34 MTEB tasks** across 7 categories: Classification, Clustering, Retrieval, Reranking, STS, Pair Classification, and Summarization.
 
 ## Dimension Selection Methods
 
@@ -195,7 +194,7 @@ All models are evaluated on **35 MTEB tasks** across 6 categories: Classificatio
 │   ├── redesign_figures.py          # Figure generation
 │   └── ...                          # Additional scripts & notebooks
 ├── data/               # Experimental data (HuggingFace)
-│   ├── analyze/        # Chunk importance scores (3 models)
+│   ├── analyze/        # Chunk importance scores (9 models)
 │   ├── mteb/           # MTEB evaluation results (13 models)
 │   ├── task_similar/   # Cross-task transfer data (12 models)
 │   └── experiment_results/  # Analysis outputs
